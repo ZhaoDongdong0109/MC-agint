@@ -1,0 +1,11 @@
+.gradle/
+build/
+run/
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.DS_Store
+ai-agent-memory/
+config/
