@@ -33,7 +33,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -927,7 +927,7 @@ public class AIAutonomousCore {
             ItemStack stack = inv.getItem(i);
             if (stack.isEmpty()) continue;
 
-            String name = net.minecraftforge.registries.ForgeRegistries.ITEMS
+            String name = BuiltInRegistries.ITEM
                 .getKey(stack.getItem()).getPath();
 
             float damage = 1; // 空手
@@ -972,7 +972,7 @@ public class AIAutonomousCore {
             // 注册名：minecraft:oak_planks
             String regName = "";
             try {
-                regName = ForgeRegistries.ITEMS.getKey(result.getItem()).toString().toLowerCase();
+                regName = BuiltInRegistries.ITEM.getKey(result.getItem()).toString().toLowerCase();
             } catch (Exception ignored) {}
             String pathName = regName.contains(":") ? regName.split(":")[1] : regName;
 
@@ -1386,7 +1386,7 @@ public class AIAutonomousCore {
      */
     private void autoSelectTool(BlockState targetBlock) {
         var inv = player.getInventory();
-        String blockName = net.minecraftforge.registries.ForgeRegistries.BLOCKS
+        String blockName = BuiltInRegistries.BLOCK
             .getKey(targetBlock.getBlock()).getPath();
 
         // 判断需要什么工具
@@ -1409,7 +1409,7 @@ public class AIAutonomousCore {
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack stack = inv.getItem(i);
             if (stack.isEmpty()) continue;
-            String itemName = net.minecraftforge.registries.ForgeRegistries.ITEMS
+            String itemName = BuiltInRegistries.ITEM
                 .getKey(stack.getItem()).getPath();
             if (itemName.contains(neededTool)) {
                 float speed = stack.getDestroySpeed(targetBlock);
@@ -1440,7 +1440,7 @@ public class AIAutonomousCore {
                 // 也检查注册名
                 String regName = "";
                 try {
-                    regName = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                    regName = BuiltInRegistries.ITEM
                         .getKey(stack.getItem()).toString().toLowerCase();
                 } catch (Exception ignored) {}
 

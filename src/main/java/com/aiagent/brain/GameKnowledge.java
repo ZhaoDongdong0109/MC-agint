@@ -12,7 +12,7 @@ import net.minecraft.world.item.crafting.*;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -212,8 +212,8 @@ public class GameKnowledge {
 
         StringBuilder sb = new StringBuilder();
 
-        for (Block block : ForgeRegistries.BLOCKS) {
-            String name = ForgeRegistries.BLOCKS.getKey(block).toString();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            String name = BuiltInRegistries.BLOCK.getKey(block).toString();
             if (name.contains(blockName.toLowerCase()) ||
                 block.getName().getString().toLowerCase().contains(blockName.toLowerCase())) {
 
@@ -238,7 +238,7 @@ public class GameKnowledge {
 
     private String guessBestTool(Block block) {
         // 根据方块类型猜测最佳工具
-        String name = ForgeRegistries.BLOCKS.getKey(block).getPath();
+        String name = BuiltInRegistries.BLOCK.getKey(block).getPath();
         if (name.contains("ore") || name.contains("stone") || name.contains("cobble")) return "镐(pickaxe)";
         if (name.contains("log") || name.contains("wood") || name.contains("plank")) return "斧(axe)";
         if (name.contains("dirt") || name.contains("grass") || name.contains("sand") || name.contains("gravel")) return "铲(shovel)";
@@ -256,8 +256,8 @@ public class GameKnowledge {
 
         StringBuilder sb = new StringBuilder();
 
-        for (Item item : ForgeRegistries.ITEMS) {
-            String regName = ForgeRegistries.ITEMS.getKey(item).toString();
+        for (Item item : BuiltInRegistries.ITEM) {
+            String regName = BuiltInRegistries.ITEM.getKey(item).toString();
             ItemStack stack = new ItemStack(item);
 
             if (regName.contains(itemName.toLowerCase()) ||

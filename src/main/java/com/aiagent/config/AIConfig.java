@@ -1,36 +1,31 @@
 package com.aiagent.config;
 
 import com.aiagent.AIAgentMod;
-import net.minecraftforge.common.ForgeConfigSpec;
-import org.apache.commons.lang3.tuple.Pair;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
  * AI Agent 配置
  *
- * 使用 Forge Config 系统，配置保存在 config/aiagent-common.toml
+ * 使用 NeoForge Config 系统，配置保存在 config/aiagent-common.toml
  */
 public class AIConfig {
 
-    // Forge Config
-    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
+    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
-    private static final ForgeConfigSpec.ConfigValue<String> API_URL =
+    private static final ModConfigSpec.ConfigValue<String> API_URL =
             BUILDER.comment("AI API URL (OpenAI-compatible endpoint)")
                     .define("apiUrl", "https://token-plan-cn.xiaomimimo.com/v1");
 
-    private static final ForgeConfigSpec.ConfigValue<String> API_KEY =
+    private static final ModConfigSpec.ConfigValue<String> API_KEY =
             BUILDER.comment("AI API Key")
                     .define("apiKey", "");
 
-    private static final ForgeConfigSpec.ConfigValue<String> MODEL =
+    private static final ModConfigSpec.ConfigValue<String> MODEL =
             BUILDER.comment("AI Model name")
                     .define("model", "MiMo-V2-Omni");
 
-    public static final ForgeConfigSpec SPEC = BUILDER.build();
+    public static final ModConfigSpec SPEC = BUILDER.build();
 
-    /**
-     * 初始化 - 在 mod 构造函数中调用
-     */
     public static void init() {
         AIAgentMod.LOGGER.info("[AI Config] 配置已加载");
     }
