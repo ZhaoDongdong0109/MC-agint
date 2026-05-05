@@ -73,7 +73,7 @@ public class AIAgentMod {
      * 选择 PlayerEvent.LoggedIn 而非 ServerStartedEvent，因为此时世界已完全加载
      */
     @SubscribeEvent
-    public void onPlayerLoggedIn(PlayerEvent.LoggedInEvent event) {
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (restored) return;
         restored = true;
 
