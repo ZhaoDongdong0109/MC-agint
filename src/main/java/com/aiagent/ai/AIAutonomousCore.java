@@ -110,7 +110,7 @@ public class AIAutonomousCore {
         this.player = player;
         this.name = name;
         this.conversation = new ConversationManager(name);
-        this.memory = new MemoryManager(name);
+        this.memory = new MemoryManager(name, apiClient);
 
         // 加载记忆
         memory.load();
@@ -145,6 +145,9 @@ public class AIAutonomousCore {
     public void tick() {
         // 更新状态机
         stateMachine.tick();
+
+        // 记忆系统维护（自动存盘、蒸馏检查）
+        memory.tick();
 
         // 检查异步 LLM 是否有结果回来了
         if (pendingLLMResponse != null) {
@@ -337,6 +340,7 @@ public class AIAutonomousCore {
         }, serverExecutor);
 
         memory.addThought(player.tickCount, sender + " 跟我说了: " + cleanMessage);
+        memory.addEpisode(player.tickCount, sender + " 对我说: " + cleanMessage);
     }
 
     private void handleLLMResponse(String rawResponse, String chatSender) {
@@ -378,6 +382,7 @@ public class AIAutonomousCore {
             // 记住 AI 刚才说的话 → 自主思考会继续执行
             currentGoal = reply;
             AIAgentMod.LOGGER.debug("[{}] 设定目标: {}", name, currentGoal);
+            memory.addEpisode(player.tickCount, "我答应了 " + chatSender + ": " + reply);
         }
 
         stateMachine.transition(State.CHATTING, "聊完了");
@@ -1203,6 +1208,7 @@ public class AIAutonomousCore {
     private void handleDeath() {
         AIAgentMod.LOGGER.info("[{}] 死亡了！", name);
         memory.addThought(player.tickCount, "我死了...");
+        memory.addEpisode(player.tickCount, "我在 " + player.blockPosition().toShortString() + " 死亡了");
 
         // 清除当前动作
         miningTarget = null;
