@@ -45,7 +45,11 @@ public class AIApiClient {
         String apiKey = AIConfig.getApiKey();
         String model = AIConfig.getModel();
 
+        AIAgentMod.LOGGER.info("[API] 调用: url={}, model={}, keyLen={}",
+                apiUrl, model, apiKey != null ? apiKey.length() : 0);
+
         if (apiKey == null || apiKey.isEmpty()) {
+            AIAgentMod.LOGGER.warn("[API] API Key 未设置!");
             return errorResponse("未配置 API Key，使用 /ai config key <key> 设置");
         }
 
@@ -68,6 +72,7 @@ public class AIApiClient {
             }
 
             int code = conn.getResponseCode();
+            AIAgentMod.LOGGER.info("[API] 响应码: {}", code);
 
             // 处理限流
             if (code == 429) {
@@ -95,12 +100,16 @@ public class AIApiClient {
             return parseResponse(responseBody);
 
         } catch (java.net.SocketTimeoutException e) {
+            AIAgentMod.LOGGER.warn("[API] 超时 (attempt {}/{}): {}", attempt + 1, MAX_RETRIES + 1, e.getMessage());
             if (attempt < MAX_RETRIES) {
                 return chatWithRetry(prompt, attempt + 1);
             }
-            return errorResponse("API 超时");
+            return errorResponse("API 超时，请检查网络或 API 地址");
         } catch (Exception e) {
-            AIAgentMod.LOGGER.error("API call failed", e);
+            AIAgentMod.LOGGER.error("[API] 调用失败 (attempt {}/{}): {}", attempt + 1, MAX_RETRIES + 1, e.getMessage(), e);
+            if (attempt < MAX_RETRIES) {
+                return chatWithRetry(prompt, attempt + 1);
+            }
             return errorResponse("API 调用失败: " + e.getMessage());
         }
     }
@@ -189,10 +198,11 @@ public class AIApiClient {
 
     /**
      * 生成错误响应（模拟 LLM 返回格式）
+     * 错误信息同时放在 reply 和 thought 里，确保玩家能看到
      */
     private String errorResponse(String message) {
         JsonObject obj = new JsonObject();
-        obj.addProperty("reply", "");
+        obj.addProperty("reply", "[系统] " + message);
         obj.addProperty("action", "none");
         obj.addProperty("thought", message);
         return GSON.toJson(obj);

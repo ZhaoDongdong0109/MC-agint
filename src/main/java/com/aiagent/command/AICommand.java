@@ -83,6 +83,21 @@ public class AICommand {
                 Component.literal("§a[AI] §f已召唤: §e" + name + " §7(在聊天框里 @" + name + " 跟它说话)"),
                 true
         );
+
+        // 检查 API 配置
+        String apiKey = AIConfig.getApiKey();
+        if (apiKey == null || apiKey.isEmpty()) {
+            ctx.getSource().sendSuccess(() ->
+                    Component.literal("§c[AI] §f警告: 未设置 API Key！请使用 §e/ai config key <你的key> §f设置"),
+                    false
+            );
+        } else {
+            ctx.getSource().sendSuccess(() ->
+                    Component.literal("§7[AI] API: §f" + AIConfig.getModel() + " §7@ §f" + AIConfig.getApiUrl()),
+                    false
+            );
+        }
+
         return 1;
     }
 
