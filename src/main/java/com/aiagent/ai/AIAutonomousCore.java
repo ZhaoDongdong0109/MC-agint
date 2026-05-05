@@ -995,10 +995,10 @@ public class AIAutonomousCore {
 
         // 检查是否需要 3x3 合成台
         boolean needsTable = false;
-        if (foundRecipe instanceof net.minecraft.world.item.crafting.CraftingRecipe craftingRecipe) {
+        if (foundRecipe instanceof net.minecraft.world.item.crafting.ShapedRecipe shapedRecipe) {
             // 如果配方宽度或高度 > 2，需要合成台
-            int width = craftingRecipe.getWidth();
-            int height = craftingRecipe.getHeight();
+            int width = shapedRecipe.getWidth();
+            int height = shapedRecipe.getHeight();
             if (width > 2 || height > 2) {
                 needsTable = true;
             }

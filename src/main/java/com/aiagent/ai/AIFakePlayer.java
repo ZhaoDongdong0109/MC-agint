@@ -24,10 +24,11 @@ public class AIFakePlayer extends ServerPlayer {
      * 即使这个玩家出现在 player list 里，存档里也不会有有效数据
      */
     @Override
-    public void save(CompoundTag tag) {
+    public boolean save(CompoundTag tag) {
         // 只写身份标记，不写位置/背包/血量
         tag.putString("id", "aiagent:" + this.getName().getString());
         tag.putBoolean("aiagent", true);  // 标记为 AI，方便识别
         // 不调用 super，避免写入完整数据
+        return false;
     }
 }
