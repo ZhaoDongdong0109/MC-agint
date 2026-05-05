@@ -134,7 +134,7 @@ public class ConversationManager {
         sb.append("{\n");
         sb.append("  \"reply\": \"你想说的话（可选，如果想自言自语）\",\n");
         sb.append("  \"action\": \"要做的动作: move|mine|chop|attack|craft|eat|query|goto|follow|wait|none\",\n");
-        sb.append("  \"action_target\": \"动作目标\",\n");
+        sb.append("  \"action_target\": \"动作目标，如 move 填 forward/north/south/east/west, goto 填坐标 x z, follow 填玩家名, mine/chop/attack 填目标名\",\n");
         sb.append("  \"thought\": \"你的想法\"\n");
         sb.append("}\n");
 

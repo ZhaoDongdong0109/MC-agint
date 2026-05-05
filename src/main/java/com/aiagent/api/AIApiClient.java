@@ -54,7 +54,13 @@ public class AIApiClient {
         }
 
         try {
-            URL url = new URL(apiUrl);
+            // 自动兼容：用户可能配的是 base_url（不带 /chat/completions）
+            String fullUrl = apiUrl;
+            if (!fullUrl.endsWith("/chat/completions")) {
+                fullUrl = fullUrl.replaceAll("/+$", "") + "/chat/completions";
+            }
+
+            URL url = new URL(fullUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");

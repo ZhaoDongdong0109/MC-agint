@@ -307,6 +307,12 @@ public class AIAutonomousCore {
     private void handleLLMResponse(String rawResponse, String chatSender) {
         ParsedResponse parsed = ResponseParser.parse(rawResponse);
 
+        AIAgentMod.LOGGER.info("[{}] LLM 回复: reply={}, action={}, target={}",
+                name,
+                parsed.reply() != null ? parsed.reply().substring(0, Math.min(50, parsed.reply().length())) : "null",
+                parsed.action(),
+                parsed.actionTarget());
+
         if (parsed.thought() != null && !parsed.thought().isEmpty()) {
             memory.addThought(player.tickCount, parsed.thought());
             AIAgentMod.LOGGER.debug("[{}] 想法: {}", name, parsed.thought());
@@ -394,14 +400,22 @@ public class AIAutonomousCore {
             default -> Vec3.atLowerCornerOf(facing.getNormal());
         };
 
-        // 走 3 步
-        for (int step = 0; step < 3; step++) {
-            if (!walkStep(dir)) {
+        // 走 5 步（比之前多）
+        int moved = 0;
+        for (int step = 0; step < 5; step++) {
+            if (walkStep(dir)) {
+                moved++;
+            } else {
                 // 碰到障碍，尝试跨上去
                 if (!stepUp(dir)) {
-                    return true; // 走不动了
+                    break; // 走不动了
                 }
+                moved++;
             }
+        }
+
+        if (moved > 0) {
+            AIAgentMod.LOGGER.debug("[{}] 向 {} 移动了 {} 步", name, target, moved);
         }
         return true;
     }
@@ -426,17 +440,25 @@ public class AIAutonomousCore {
 
                 if (dist < 1.5) return true; // 到了
 
-                // 向目标走一步
+                // 向目标走多步（每 tick 最多走 5 步）
                 Vec3 dir = new Vec3(dx / dist, 0, dz / dist);
-                if (!walkStep(dir)) {
-                    // 碰到障碍，尝试跳
-                    if (!stepUp(dir)) {
-                        // 跳不过去，绕路
-                        Vec3 side = new Vec3(-dir.z, 0, dir.x); // 垂直方向
-                        if (!walkStep(side)) {
-                            walkStep(side.scale(-1)); // 另一边
+                int moved = 0;
+                for (int i = 0; i < 5; i++) {
+                    if (walkStep(dir)) {
+                        moved++;
+                    } else {
+                        if (!stepUp(dir)) {
+                            // 跳不过去，绕路
+                            Vec3 side = new Vec3(-dir.z, 0, dir.x);
+                            walkStep(side);
+                            break;
                         }
+                        moved++;
                     }
+                }
+                if (moved > 0) {
+                    AIAgentMod.LOGGER.debug("[{}] goto {} 移动了 {} 步, 剩余 {:.1f} 格",
+                            name, target, moved, dist);
                 }
                 return false; // 还没到
             }
@@ -459,14 +481,17 @@ public class AIAutonomousCore {
         double dist = player.distanceTo(targetPlayer);
         if (dist <= 3) return true; // 够近了
 
-        // 向目标走
+        // 向目标走多步
         double dx = targetPlayer.getX() - player.getX();
         double dz = targetPlayer.getZ() - player.getZ();
         double len = Math.sqrt(dx * dx + dz * dz);
         if (len > 0) {
             Vec3 dir = new Vec3(dx / len, 0, dz / len);
-            if (!walkStep(dir)) {
-                stepUp(dir);
+            for (int i = 0; i < 3; i++) {
+                if (!walkStep(dir)) {
+                    stepUp(dir);
+                    break;
+                }
             }
         }
         return false; // 继续跟
@@ -484,13 +509,53 @@ public class AIAutonomousCore {
         double newY = player.getY();
         double newZ = player.getZ() + move.z;
 
-        // 碰撞检测：检查目标位置是否可通行
-        if (canWalkTo(newX, newY, newZ)) {
+        ServerLevel level = player.serverLevel();
+        BlockPos targetPos = BlockPos.containing(newX, newY, newZ);
+        BlockPos belowPos = BlockPos.containing(newX, newY - 0.1, newZ);
+
+        BlockState targetBlock = level.getBlockState(targetPos);
+        BlockState belowBlock = level.getBlockState(belowPos);
+
+        // 详细日志：看看碰撞检测到底在判断什么
+        AIAgentMod.LOGGER.info("[{}] walkStep: 目标方块={} 是否阻挡={}, 脚下={} 是否实心={}",
+                name,
+                targetBlock.getBlock().getName().getString(),
+                targetBlock.blocksMotion(),
+                belowBlock.getBlock().getName().getString(),
+                belowBlock.blocksMotion());
+
+        // 碰撞检测：目标位置不能是固体，脚下必须有固体
+        if (!targetBlock.blocksMotion() && belowBlock.blocksMotion()) {
+            double oldX = player.getX();
+            double oldZ = player.getZ();
+
+            // 尝试多种移动方式
             player.absMoveTo(newX, newY, newZ);
-            updateLookDirection(dir);
-            return true;
+
+            // 验证是否真的移动了
+            double moved = Math.abs(player.getX() - oldX) + Math.abs(player.getZ() - oldZ);
+            if (moved < 0.001) {
+                // absMoveTo 没生效，尝试 setPos
+                player.setPos(newX, newY, newZ);
+                moved = Math.abs(player.getX() - oldX) + Math.abs(player.getZ() - oldZ);
+                AIAgentMod.LOGGER.info("[{}] absMoveTo 没生效，尝试 setPos, 移动距离={}", name, moved);
+            }
+
+            if (moved > 0.001) {
+                updateLookDirection(dir);
+                // 广播位置更新给所有客户端
+                broadcastMovement(oldX, player.getY(), oldZ);
+                AIAgentMod.LOGGER.info("[{}] 移动成功: ({},{},{}) → ({},{},{})",
+                        name, oldX, player.getY(), oldZ, player.getX(), player.getY(), player.getZ());
+                return true;
+            } else {
+                AIAgentMod.LOGGER.info("[{}] 移动失败！absMoveTo 和 setPos 都没生效", name);
+                return false;
+            }
         }
 
+        AIAgentMod.LOGGER.info("[{}] 碰撞阻挡: {} (blocksMotion={})",
+                name, targetBlock.getBlock().getName().getString(), targetBlock.blocksMotion());
         return false;
     }
 
@@ -505,10 +570,26 @@ public class AIAutonomousCore {
         double stepY = player.getY() + STEP_HEIGHT;
         double newZ = player.getZ() + move.z;
 
+        ServerLevel level = player.serverLevel();
+        BlockPos stepPos = BlockPos.containing(newX, stepY, newZ);
+        BlockState stepBlock = level.getBlockState(stepPos);
+
         // 检查上方是否可站
-        if (canWalkTo(newX, stepY, newZ)) {
+        if (!stepBlock.blocksMotion()) {
+            double oldX = player.getX();
+            double oldZ = player.getZ();
+
             player.absMoveTo(newX, stepY, newZ);
+
+            double moved = Math.abs(player.getX() - oldX) + Math.abs(player.getZ() - oldZ);
+            if (moved < 0.001) {
+                player.setPos(newX, stepY, newZ);
+            }
+
             updateLookDirection(dir);
+            // 广播位置更新
+            broadcastMovement(oldX, player.getY(), oldZ);
+            AIAgentMod.LOGGER.debug("[{}] 跨台阶: {} → Y+{}", name, stepBlock.getBlock().getName().getString(), STEP_HEIGHT);
             return true;
         }
         return false;
@@ -1202,6 +1283,23 @@ public class AIAutonomousCore {
             level.getServer().getPlayerList().broadcastSystemMessage(
                 net.minecraft.network.chat.Component.literal(formatted), false
             );
+        }
+    }
+
+    // ==================== 网络广播 ====================
+
+    /**
+     * 广播 AI 移动给所有客户端
+     * 使用 MC 原生的 Teleport 包（精确位置更新）
+     */
+    private void broadcastMovement(double oldX, double oldY, double oldZ) {
+        if (player.getServer() == null) return;
+
+        var packet = new net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket(player);
+        for (var realPlayer : player.getServer().getPlayerList().getPlayers()) {
+            if (realPlayer != player) {
+                realPlayer.connection.send(packet);
+            }
         }
     }
 
