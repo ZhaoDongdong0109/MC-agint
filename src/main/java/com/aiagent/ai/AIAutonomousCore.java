@@ -463,7 +463,7 @@ public class AIAutonomousCore {
     private String buildPerception() {
         StringBuilder sb = new StringBuilder();
 
-        sb.append(String.format("生命=%.0f/20 饥饿=%.0f/20",
+        sb.append(String.format("生命=%.0f/20 饥饿=%d/20",
                 player.getHealth(), player.getFoodData().getFoodLevel()));
 
         sb.append(String.format(" 位置=(%d,%d,%d)",
