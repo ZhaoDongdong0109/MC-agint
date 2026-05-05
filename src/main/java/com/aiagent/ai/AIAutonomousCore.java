@@ -598,4 +598,39 @@ public class AIAutonomousCore {
         instinctLayer.forceIdle();
         thinkCooldown = 60;
     }
+
+    // ==================== 公开接口（AIPlayerManager 依赖）====================
+
+    /**
+     * 获取 AI 玩家实体
+     */
+    public ServerPlayer getPlayer() {
+        return player;
+    }
+
+    /**
+     * 清理资源（移除 AI 时调用）
+     */
+    public void cleanup() {
+        instinctLayer.forceIdle();
+        memory.save();
+        conversation.clear();
+    }
+
+    /**
+     * 清除当前目标，让 AI 自由活动
+     */
+    public void clearGoal() {
+        this.currentGoal = null;
+        instinctLayer.forceIdle();
+        stateMachine.transition(State.IDLE, "目标被清除");
+        thinkCooldown = 20;
+    }
+
+    /**
+     * 获取当前状态（用于 /ai status 和 /ai list）
+     */
+    public BehaviorStateMachine.State getState() {
+        return stateMachine.getCurrentState();
+    }
 }

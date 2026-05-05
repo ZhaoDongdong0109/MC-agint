@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.*;
 
@@ -288,6 +289,57 @@ public class InstinctLayer {
             player.level().destroyBlock(mineTarget, true, player);
             state = InstinctState.IDLE;
             mineTarget = null;
+        }
+
+        return true;
+    }
+
+    /**
+     * 砍树 — 和挖掘逻辑相同，但会持续砍整棵树
+     */
+    private boolean tickChopping() {
+        if (mineTarget == null) {
+            state = InstinctState.IDLE;
+            return false;
+        }
+
+        // 检查当前方块还在不在
+        BlockState blockState = player.level().getBlockState(mineTarget);
+        if (blockState.isAir()) {
+            // 砍完了这一格，检查上面还有没有原木
+            BlockPos above = mineTarget.above();
+            BlockState aboveState = player.level().getBlockState(above);
+            String blockName = net.minecraftforge.registries.ForgeRegistries.BLOCKS
+                    .getKey(aboveState.getBlock()).getPath();
+            if (blockName.contains("log")) {
+                // 继续砍上面的
+                mineTarget = above;
+                mineTicks = 0;
+                mineTotalTicks = (int) (aboveState.getDestroySpeed(null, above) * 20);
+                if (mineTotalTicks < 1) mineTotalTicks = 1;
+                return true;
+            } else {
+                // 树砍完了
+                state = InstinctState.IDLE;
+                mineTarget = null;
+                return false;
+            }
+        }
+
+        // 太远了，走近点
+        double dist = player.blockPosition().distSqr(mineTarget);
+        if (dist > 6) {
+            Vec3 dir = Vec3.atCenterOf(mineTarget).subtract(player.position()).normalize();
+            player.move(MoverType.SELF, new Vec3(dir.x * 0.2, 0, dir.z * 0.2));
+            return true;
+        }
+
+        // 挖掘
+        mineTicks++;
+        if (mineTicks >= mineTotalTicks) {
+            player.level().destroyBlock(mineTarget, true, player);
+            mineTicks = 0;
+            // 不切换状态，让上面的逻辑检查是否继续砍
         }
 
         return true;

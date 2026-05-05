@@ -79,7 +79,7 @@ public class ReflexLayer {
 
         AABB box = new AABB(player.blockPosition()).inflate(5);
         List<Projectile> projectiles = player.level().getEntitiesOfClass(
-                Projectile.class, box, p -> !p.isOnGround() && p.getOwner() != player);
+                Projectile.class, box, p -> p.getDeltaMovement().lengthSqr() > 0.01 && p.getOwner() != player);
 
         if (projectiles.isEmpty()) return false;
 
