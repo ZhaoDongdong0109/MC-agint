@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Specification-Title: aiagent
+Specification-Vendor: AIAgent
+Specification-Version: 1
+Implementation-Title: MC-agint-main
+Implementation-Version: 1.0.0
+Implementation-Vendor: AIAgent
+
