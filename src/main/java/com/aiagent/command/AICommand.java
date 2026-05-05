@@ -40,6 +40,11 @@ public class AICommand {
             .then(Commands.literal("list")
                 .executes(ctx -> list(ctx))
             )
+            .then(Commands.literal("stop")
+                .then(Commands.argument("name", StringArgumentType.word())
+                    .executes(ctx -> stop(ctx, StringArgumentType.getString(ctx, "name")))
+                )
+            )
             .then(Commands.literal("ask")
                 .then(Commands.argument("question", StringArgumentType.greedyString())
                     .executes(ctx -> ask(ctx, StringArgumentType.getString(ctx, "question")))
@@ -118,6 +123,18 @@ public class AICommand {
         ctx.getSource().sendSuccess(() ->
                 Component.literal("§e[AI 玩家列表]\n§f" + list), false);
         return 1;
+    }
+
+    private static int stop(CommandContext<CommandSourceStack> ctx, String name) {
+        boolean ok = AIPlayerManager.getInstance().stopGoal(name);
+        if (ok) {
+            ctx.getSource().sendSuccess(() ->
+                    Component.literal("§a[AI] §e" + name + " §f已停止当前任务，开始自由活动"), true);
+        } else {
+            ctx.getSource().sendFailure(
+                    Component.literal("§c[AI] §f没找到 §e" + name));
+        }
+        return ok ? 1 : 0;
     }
 
     private static int ask(CommandContext<CommandSourceStack> ctx, String question) {

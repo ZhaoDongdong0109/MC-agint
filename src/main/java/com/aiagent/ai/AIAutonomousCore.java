@@ -79,6 +79,9 @@ public class AIAutonomousCore {
     private int actionTicks = 0;
     private static final int ACTION_TIMEOUT = 100; // 5 秒超时
 
+    // 当前目标：玩家交代的事，AI 会持续做到完成
+    private String currentGoal = null;
+
     // 移动相关
     private static final double WALK_SPEED = 0.2;      // 每 tick 步长（格）
     private static final double RUN_SPEED = 0.35;       // 跑步步长
@@ -212,7 +215,7 @@ public class AIAutonomousCore {
         String perception = buildPerception();
         String memoryContext = memory.getRelevantContext(perception);
         String prompt = conversation.buildAutonomousPrompt(
-                perception, memoryContext, knowledge, player);
+                perception, memoryContext, knowledge, player, currentGoal);
 
         // 异步调 LLM（不阻塞服务器主线程）
         waitingForLLM = true;
@@ -251,6 +254,11 @@ public class AIAutonomousCore {
         stateMachine.transition(State.IDLE, "验证完成");
         thinkCooldown = autonomousThinkInterval / 3;
         currentAction = null;
+        // 动作完成，清掉目标（如果有的话）
+        if (currentGoal != null) {
+            AIAgentMod.LOGGER.debug("[{}] 目标完成: {}", name, currentGoal);
+            currentGoal = null;
+        }
     }
 
     private void tickChatting() {
@@ -332,9 +340,57 @@ public class AIAutonomousCore {
     }
 
     private void handleLLMResponse(String rawResponse, String chatSender) {
+        if (chatSender == null) {
+            // 自主思考（JSON 格式）
+            handleAutonomousResponse(rawResponse);
+        } else {
+            // 聊天回复（自然语言）
+            handleChatResponse(rawResponse, chatSender);
+        }
+    }
+
+    /**
+     * 聊天回复处理 —— 自然语言，直接发给玩家
+     * AI 说过的话会记住作为 currentGoal，自主思考时继续执行
+     */
+    private void handleChatResponse(String rawResponse, String chatSender) {
+        String reply = rawResponse.trim();
+
+        // 去掉 LLM 可能加的引号
+        if (reply.startsWith("\"") && reply.endsWith("\"")) {
+            reply = reply.substring(1, reply.length() - 1).trim();
+        }
+
+        // 去掉可能的 agentName 前缀（"小赵：xxx" → "xxx"）
+        int colonIdx = reply.indexOf("：");
+        if (colonIdx < 0) colonIdx = reply.indexOf(":");
+        if (colonIdx > 0 && colonIdx < 10) {
+            String prefix = reply.substring(0, colonIdx).trim();
+            if (prefix.length() <= 6 && !prefix.contains(" ")) {
+                reply = reply.substring(colonIdx + 1).trim();
+            }
+        }
+
+        if (!reply.isEmpty()) {
+            conversation.addTurn("assistant", reply);
+            sendChat(reply);
+
+            // 记住 AI 刚才说的话 → 自主思考会继续执行
+            currentGoal = reply;
+            AIAgentMod.LOGGER.debug("[{}] 设定目标: {}", name, currentGoal);
+        }
+
+        stateMachine.transition(State.CHATTING, "聊完了");
+        thinkCooldown = autonomousThinkInterval / 2;
+    }
+
+    /**
+     * 自主思考处理 —— JSON 格式
+     */
+    private void handleAutonomousResponse(String rawResponse) {
         ParsedResponse parsed = ResponseParser.parse(rawResponse);
 
-        AIAgentMod.LOGGER.info("[{}] LLM 回复: reply={}, action={}, target={}",
+        AIAgentMod.LOGGER.info("[{}] 自主思考: reply={}, action={}, target={}",
                 name,
                 parsed.reply() != null ? parsed.reply().substring(0, Math.min(50, parsed.reply().length())) : "null",
                 parsed.action(),
@@ -348,9 +404,7 @@ public class AIAutonomousCore {
         if (parsed.hasReply()) {
             String reply = parsed.reply();
             conversation.addTurn("assistant", reply);
-            if (chatSender != null) {
-                sendChat(reply);
-            } else if (!reply.isEmpty()) {
+            if (!reply.isEmpty()) {
                 sendWhisper(reply);
             }
         }
@@ -360,13 +414,14 @@ public class AIAutonomousCore {
             currentActionTarget = parsed.actionTarget();
             actionTicks = 0;
             stateMachine.transition(State.EXECUTING, currentAction);
-        } else if (parsed.isChatOnly()) {
-            if (chatSender != null) {
-                stateMachine.transition(State.CHATTING, "聊完了");
-            } else {
-                stateMachine.transition(State.IDLE, "自言自语完了");
-            }
+        } else {
+            stateMachine.transition(State.IDLE, "自言自语完了");
             thinkCooldown = autonomousThinkInterval / 2;
+            // 如果没有动作且有目标，目标可能已完成或做不了，清掉
+            if (currentGoal != null) {
+                AIAgentMod.LOGGER.debug("[{}] 目标完成或放弃: {}", name, currentGoal);
+                currentGoal = null;
+            }
         }
     }
 
@@ -1611,6 +1666,8 @@ public class AIAutonomousCore {
         miningTarget = null;
         // 停止攻击
         attackTarget = null;
+        // 清除目标
+        currentGoal = null;
         // 停止吃东西
         if (player.isUsingItem()) player.stopUsingItem();
         // 清除异步状态
@@ -1630,4 +1687,17 @@ public class AIAutonomousCore {
     public BehaviorStateMachine getStateMachine() { return stateMachine; }
     public ConversationManager getConversation() { return conversation; }
     public MemoryManager getMemory() { return memory; }
+
+    /**
+     * 清除当前目标，让 AI 自由活动
+     */
+    public void clearGoal() {
+        currentGoal = null;
+        currentAction = null;
+        miningTarget = null;
+        attackTarget = null;
+        stateMachine.transition(State.IDLE, "目标被取消");
+        thinkCooldown = 0;
+        AIAgentMod.LOGGER.info("[{}] 目标已清除，开始自由活动", name);
+    }
 }

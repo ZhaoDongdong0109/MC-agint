@@ -165,6 +165,18 @@ public class AIPlayerManager {
         }
     }
 
+    /**
+     * 停止 AI 的当前目标，让它自由活动
+     */
+    public boolean stopGoal(String name) {
+        AIAutonomousCore core = agents.get(name);
+        if (core != null) {
+            core.clearGoal();
+            return true;
+        }
+        return false;
+    }
+
     public String getStatus(String name) {
         AIAutonomousCore core = agents.get(name);
         if (core != null) {
