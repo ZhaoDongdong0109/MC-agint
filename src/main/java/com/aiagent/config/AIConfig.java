@@ -24,7 +24,7 @@ public class AIConfig {
 
     private static final ForgeConfigSpec.ConfigValue<String> MODEL =
             BUILDER.comment("AI Model name")
-                    .define("model", "MiMo-v2-Omni");
+                    .define("model", "xiaomi-token-plan-cn/mimo-v2-omni");
 
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
