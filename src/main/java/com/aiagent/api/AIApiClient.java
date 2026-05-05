@@ -53,15 +53,6 @@ public class AIApiClient {
             return errorResponse("未配置 API Key，使用 /ai config key <key> 设置");
         }
 
-        // 自动补全 /chat/completions
-        if (!apiUrl.endsWith("/chat/completions")) {
-            if (apiUrl.endsWith("/")) {
-                apiUrl = apiUrl + "chat/completions";
-            } else {
-                apiUrl = apiUrl + "/chat/completions";
-            }
-        }
-
         try {
             URL url = new URL(apiUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
