@@ -16,7 +16,7 @@ public class AIConfig {
 
     private static final ForgeConfigSpec.ConfigValue<String> API_URL =
             BUILDER.comment("AI API URL (OpenAI-compatible endpoint)")
-                    .define("apiUrl", "https://api.openai.com/v1/chat/completions");
+                    .define("apiUrl", "https://token-plan-cn.xiaomimimo.com/v1/chat/completions");
 
     private static final ForgeConfigSpec.ConfigValue<String> API_KEY =
             BUILDER.comment("AI API Key")
@@ -24,7 +24,7 @@ public class AIConfig {
 
     private static final ForgeConfigSpec.ConfigValue<String> MODEL =
             BUILDER.comment("AI Model name")
-                    .define("model", "gpt-3.5-turbo");
+                    .define("model", "MiMo-v2-Omni");
 
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
