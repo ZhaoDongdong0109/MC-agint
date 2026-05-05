@@ -42,8 +42,8 @@ public class AIPlayerManager {
         // 设置游戏模式为生存（FakePlayer 默认可能是 ADVENTURE）
         aiPlayer.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
 
-        // 添加到玩家列表（让其他系统能看到这个玩家）
-        server.getPlayerList().add(aiPlayer);
+        // FakePlayerFactory 已经处理了 dummy connection，不需要手动加到玩家列表
+        // 如果需要让其他玩家看到 AI，可以通过 spawnEntity 或自定义渲染实现
 
         AIAutonomousCore core = new AIAutonomousCore(aiPlayer, name);
         agents.put(name, core);

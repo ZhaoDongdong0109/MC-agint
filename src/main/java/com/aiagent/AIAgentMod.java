@@ -23,6 +23,14 @@ public class AIAgentMod {
     public AIAgentMod() {
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
         MinecraftForge.EVENT_BUS.register(this);
+
+        // 注册 Forge Config
+        net.minecraftforge.fml.ModLoadingContext.get().registerConfig(
+                net.minecraftforge.fml.config.ModConfig.Type.COMMON,
+                AIConfig.SPEC,
+                "aiagent-common.toml"
+        );
+
         AIConfig.init();
     }
 
@@ -41,7 +49,7 @@ public class AIAgentMod {
     @SubscribeEvent
     public void onChat(ServerChatEvent event) {
         String sender = event.getPlayer().getName().getString();
-        String message = event.getMessage().getContent().signedContent();
+        String message = event.getMessage().getString();
 
         // 把聊天转发给所有 AI
         AIPlayerManager.getInstance().onChat(sender, message);

@@ -22,6 +22,7 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -689,13 +690,11 @@ public class AIAutonomousCore {
                 false                                 // 是否在方块内部
             );
 
-            // 调用 BlockItem 的放置逻辑
-            // 这会触发：BlockPlaceEvent、播放音效、消耗物品、更新方块状态
-            InteractionResult result = blockItem.place(
-                new net.minecraft.world.item.context.UseOnContext(
-                    player, InteractionHand.MAIN_HAND, hitResult
-                )
+            // 使用 useOn() 而非 place()，useOn 内部会正确创建 BlockPlaceContext
+            UseOnContext useOnContext = new UseOnContext(
+                player, InteractionHand.MAIN_HAND, hitResult
             );
+            InteractionResult result = blockItem.useOn(useOnContext);
 
             if (result.consumesAction()) {
                 sendWhisper("放了个 " + blockItem.getBlock().getName().getString());
