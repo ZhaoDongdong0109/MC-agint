@@ -33,6 +33,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -89,6 +90,14 @@ public class AIAutonomousCore {
     private int miningTicks = 0;
     private int miningTotalTicks = 0;
 
+    // 吃东西相关
+    private int eatingTicks = 0;
+    private static final int EAT_DURATION = 32; // MC 吃东西持续 32 tick
+
+    // 攻击追踪
+    private Entity attackTarget = null;
+    private int attackCooldown = 0;
+
     /**
      * 服务器主线程执行器 - 用于异步 LLM 回调回到主线程
      */
@@ -144,11 +153,29 @@ public class AIAutonomousCore {
             handleLLMResponse(response, sender);
         }
 
+        // 死亡检测
+        if (player.isDeadOrDying() || player.getHealth() <= 0) {
+            handleDeath();
+            return;
+        }
+
+        // 自动捡附近的掉落物
+        tickPickupItems();
+
         // 处理进行中的挖掘
         if (miningTarget != null) {
             tickMining();
             return;
         }
+
+        // 处理进行中的吃东西
+        if (player.isUsingItem()) {
+            tickEating();
+            return;
+        }
+
+        // 攻击冷却
+        if (attackCooldown > 0) attackCooldown--;
 
         // 检查生命值 - 危险检测
         if (checkDanger()) {
@@ -663,21 +690,32 @@ public class AIAutonomousCore {
         // 走到方块旁边
         double dist = playerPos.distSqr(found);
         if (dist > 4) { // 距离 > 2 格
-            // 向方块走
             Vec3 dir = Vec3.atCenterOf(found).subtract(player.position()).normalize();
             walkStep(dir);
             return false; // 还没到
         }
 
+        // 自动切换到最佳工具
+        autoSelectTool(level.getBlockState(found));
+
         // 开始挖掘
         BlockState state = level.getBlockState(found);
         float destroySpeed = state.getDestroySpeed(level, found);
-        // 基础破坏时间（tick），速度越快时间越短
+        // 手持工具加成
+        ItemStack mainHand = player.getMainHandItem();
+        float toolSpeed = mainHand.getDestroySpeed(state);
+        if (toolSpeed > 1.0f) {
+            destroySpeed *= toolSpeed;
+        }
+        // 基础破坏时间（tick）
         int breakTicks = Math.max(1, (int) (30 / Math.max(destroySpeed, 0.1)));
 
         miningTarget = found;
         miningTicks = 0;
         miningTotalTicks = breakTicks;
+
+        AIAgentMod.LOGGER.info("[{}] 开始挖掘 {} (速度={}, 需要{}tick)",
+                name, state.getBlock().getName().getString(), destroySpeed, breakTicks);
 
         return false; // 挖掘需要时间
     }
@@ -814,13 +852,31 @@ public class AIAutonomousCore {
         if (target == null) return true;
 
         ServerLevel level = player.serverLevel();
-        AABB box = player.getBoundingBox().inflate(15);
 
-        // 找最近的目标
+        // 如果有追踪目标且还活着且在范围内，继续打
+        if (attackTarget != null && attackTarget.isAlive() && player.distanceTo(attackTarget) < 5) {
+            if (attackCooldown <= 0) {
+                // 自动换武器
+                autoSelectWeapon();
+                player.attack(attackTarget);
+                attackCooldown = 20; // 1 秒冷却（MC 攻击冷却）
+                memory.addThought(player.tickCount, "继续攻击 " + attackTarget.getName().getString());
+            }
+            return false; // 还在打
+        }
+
+        // 清除旧目标
+        attackTarget = null;
+
+        // 搜索新目标
+        AABB box = player.getBoundingBox().inflate(15);
         Entity closest = null;
         double closestDist = Double.MAX_VALUE;
 
         for (Entity entity : level.getEntities(player, box)) {
+            // 只攻击怪物，不攻击玩家和友好生物
+            if (!(entity instanceof net.minecraft.world.entity.monster.Monster)) continue;
+
             String entityName = entity.getName().getString().toLowerCase();
             String typeId = entity.getType().toShortString().toLowerCase();
 
@@ -848,10 +904,50 @@ public class AIAutonomousCore {
             return false; // 还没到攻击范围
         }
 
+        // 自动换武器
+        autoSelectWeapon();
+
         // 在攻击范围内，打！
+        attackTarget = closest;
         player.attack(closest);
-        memory.addThought(player.tickCount, "攻击了 " + target);
-        return true;
+        attackCooldown = 20;
+        memory.addThought(player.tickCount, "攻击了 " + closest.getName().getString());
+        return false; // 返回 false 持续追踪
+    }
+
+    /**
+     * 自动切换到背包里最好的武器
+     */
+    private void autoSelectWeapon() {
+        var inv = player.getInventory();
+        int bestSlot = -1;
+        float bestDamage = 0;
+
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.isEmpty()) continue;
+
+            String name = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                .getKey(stack.getItem()).getPath();
+
+            float damage = 1; // 空手
+            if (name.contains("netherite_sword")) damage = 4;
+            else if (name.contains("diamond_sword")) damage = 3;
+            else if (name.contains("iron_sword")) damage = 3;
+            else if (name.contains("stone_sword")) damage = 2;
+            else if (name.contains("wooden_sword")) damage = 1.5f;
+            else if (name.contains("sword")) damage = 2;
+            else if (name.contains("axe")) damage = 2; // 斧子也能打
+
+            if (damage > bestDamage) {
+                bestDamage = damage;
+                bestSlot = i;
+            }
+        }
+
+        if (bestSlot >= 0 && bestSlot != inv.selected) {
+            inv.selected = bestSlot;
+        }
     }
 
     // ==================== 合成系统（消耗材料，产出物品） ====================
@@ -866,14 +962,26 @@ public class AIAutonomousCore {
         ServerLevel level = player.serverLevel();
         RecipeManager recipeManager = level.getRecipeManager();
         var registryAccess = level.registryAccess();
+        String targetLower = target.toLowerCase().replace(" ", "_");
 
-        // 搜索配方
+        // 搜索配方（多种匹配方式）
         CraftingRecipe foundRecipe = null;
         for (var recipe : recipeManager.getAllRecipesFor(RecipeType.CRAFTING)) {
             ItemStack result = recipe.getResultItem(registryAccess);
-            if (result.getHoverName().getString().toLowerCase().contains(target.toLowerCase()) ||
-                registryAccess.registryOrThrow(net.minecraft.core.registries.Registries.ITEM)
-                    .getKey(result.getItem()).toString().toLowerCase().contains(target.toLowerCase())) {
+
+            // 注册名：minecraft:oak_planks
+            String regName = "";
+            try {
+                regName = ForgeRegistries.ITEMS.getKey(result.getItem()).toString().toLowerCase();
+            } catch (Exception ignored) {}
+            String pathName = regName.contains(":") ? regName.split(":")[1] : regName;
+
+            // 显示名：橡木木板
+            String displayName = result.getHoverName().getString().toLowerCase();
+
+            // 匹配
+            if (pathName.contains(targetLower) || displayName.contains(targetLower)
+                || matchItemAlias(targetLower, pathName)) {
                 foundRecipe = recipe;
                 break;
             }
@@ -883,6 +991,17 @@ public class AIAutonomousCore {
             sendWhisper("我不知道怎么造 " + target);
             memory.addThought(player.tickCount, "找不到 " + target + " 的配方");
             return true;
+        }
+
+        // 检查是否需要 3x3 合成台
+        boolean needsTable = false;
+        if (foundRecipe instanceof net.minecraft.world.item.crafting.CraftingRecipe craftingRecipe) {
+            // 如果配方宽度或高度 > 2，需要合成台
+            int width = craftingRecipe.getWidth();
+            int height = craftingRecipe.getHeight();
+            if (width > 2 || height > 2) {
+                needsTable = true;
+            }
         }
 
         // 检查并消耗材料
@@ -929,16 +1048,39 @@ public class AIAutonomousCore {
         // 给予成品
         ItemStack resultCopy = resultItem.copy();
         if (!inventory.add(resultCopy)) {
-            // 背包满了，丢地上
             player.drop(resultCopy, false);
         }
 
-        sendWhisper("合成了 " + resultItem.getHoverName().getString() + " x" + resultItem.getCount());
-        memory.addThought(player.tickCount, "合成了 " + resultItem.getHoverName().getString());
+        String msg = "合成了 " + resultItem.getHoverName().getString() + " x" + resultItem.getCount();
+        if (needsTable) msg += "（需要工作台）";
+        sendWhisper(msg);
+        memory.addThought(player.tickCount, msg);
         return true;
     }
 
+    /**
+     * 物品别名匹配
+     */
+    private boolean matchItemAlias(String target, String pathName) {
+        if ((target.equals("plank") || target.equals("木板")) && pathName.contains("planks")) return true;
+        if ((target.equals("stick") || target.equals("木棍")) && pathName.equals("stick")) return true;
+        if ((target.equals("torch") || target.equals("火把")) && pathName.equals("torch")) return true;
+        if ((target.equals("chest") || target.equals("箱子")) && pathName.equals("chest")) return true;
+        if ((target.equals("table") || target.equals("工作台") || target.equals("crafting_table"))
+            && pathName.equals("crafting_table")) return true;
+        if ((target.equals("furnace") || target.equals("熔炉")) && pathName.equals("furnace")) return true;
+        if ((target.equals("pickaxe") || target.equals("镐"))
+            && pathName.contains("pickaxe")) return true;
+        if ((target.equals("sword") || target.equals("剑"))
+            && pathName.contains("sword")) return true;
+        if ((target.equals("axe") || target.equals("斧"))
+            && pathName.contains("axe")) return true;
+        return false;
+    }
+
     // ==================== 其他动作 ====================
+
+    // ==================== 吃东西系统（持续吃，不中断） ====================
 
     private boolean executeEat(String target) {
         var inv = player.getInventory();
@@ -947,16 +1089,81 @@ public class AIAutonomousCore {
             if (!stack.isEmpty() && stack.isEdible()) {
                 if (target == null ||
                     stack.getHoverName().getString().toLowerCase().contains(target.toLowerCase())) {
-                    // 先切到食物槽位，再开始吃（顺序不能反）
+                    // 先切到食物槽位，再开始吃
                     inv.selected = i;
                     player.startUsingItem(InteractionHand.MAIN_HAND);
-                    memory.addThought(player.tickCount, "吃了点东西");
-                    return true;
+                    eatingTicks = 0;
+                    memory.addThought(player.tickCount, "开始吃东西");
+                    return false; // 返回 false！让状态机保持在 EXECUTING
                 }
             }
         }
         memory.addThought(player.tickCount, "背包里没东西吃...");
         return true;
+    }
+
+    /**
+     * 每 tick 检查吃东西进度
+     */
+    private void tickEating() {
+        eatingTicks++;
+        // 吃完了（MC 默认 32 tick）
+        if (!player.isUsingItem() || eatingTicks >= EAT_DURATION) {
+            player.stopUsingItem();
+            memory.addThought(player.tickCount, "吃完了");
+            stateMachine.transition(State.IDLE, "吃完了");
+            thinkCooldown = autonomousThinkInterval / 2;
+        }
+    }
+
+    // ==================== 自动捡物品 ====================
+
+    /**
+     * 自动捡附近的掉落物（每 10 tick 检查一次，不要每 tick 都查）
+     */
+    private void tickPickupItems() {
+        if (player.tickCount % 10 != 0) return;
+
+        ServerLevel level = player.serverLevel();
+        AABB box = player.getBoundingBox().inflate(3); // 3 格内
+        for (Entity entity : level.getEntities(player, box)) {
+            if (entity instanceof net.minecraft.world.entity.item.ItemEntity itemEntity) {
+                // 碰到就捡（MC 的 ItemEntity 会自动处理拾取逻辑）
+                double dist = player.distanceTo(entity);
+                if (dist < 1.5) {
+                    // 足够近，MC 会自动触发拾取
+                    continue;
+                }
+                // 稍远一点，走过去捡
+                if (dist < 3 && stateMachine.getCurrentState() == State.IDLE) {
+                    Vec3 dir = entity.position().subtract(player.position()).normalize();
+                    walkStep(dir);
+                }
+            }
+        }
+    }
+
+    // ==================== 死亡处理 ====================
+
+    private void handleDeath() {
+        AIAgentMod.LOGGER.info("[{}] 死亡了！", name);
+        memory.addThought(player.tickCount, "我死了...");
+
+        // 清除当前动作
+        miningTarget = null;
+        currentAction = null;
+        attackTarget = null;
+
+        // 重生：传送到世界出生点
+        ServerLevel level = player.serverLevel();
+        BlockPos spawn = level.getSharedSpawnPos();
+        player.absMoveTo(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+        player.setHealth(20.0f);
+        player.getFoodData().setFoodLevel(20);
+
+        stateMachine.transition(State.IDLE, "重生了");
+        thinkCooldown = autonomousThinkInterval;
+        memory.addThought(player.tickCount, "我重生了，上辈子的事还记得...");
     }
 
     private boolean executeLook(String target) {
@@ -1175,6 +1382,51 @@ public class AIAutonomousCore {
     // ==================== 辅助方法 ====================
 
     /**
+     * 自动切换到背包里最适合当前方块的工具
+     */
+    private void autoSelectTool(BlockState targetBlock) {
+        var inv = player.getInventory();
+        String blockName = net.minecraftforge.registries.ForgeRegistries.BLOCKS
+            .getKey(targetBlock.getBlock()).getPath();
+
+        // 判断需要什么工具
+        String neededTool = null;
+        if (blockName.contains("ore") || blockName.contains("stone") || blockName.contains("cobble")
+            || blockName.contains("deepslate")) {
+            neededTool = "pickaxe";
+        } else if (blockName.contains("log") || blockName.contains("wood") || blockName.contains("plank")) {
+            neededTool = "axe";
+        } else if (blockName.contains("dirt") || blockName.contains("grass") || blockName.contains("sand")
+            || blockName.contains("gravel") || blockName.contains("snow")) {
+            neededTool = "shovel";
+        }
+
+        if (neededTool == null) return;
+
+        // 在背包里找对应工具（优先高耐久）
+        int bestSlot = -1;
+        float bestSpeed = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
+            if (stack.isEmpty()) continue;
+            String itemName = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                .getKey(stack.getItem()).getPath();
+            if (itemName.contains(neededTool)) {
+                float speed = stack.getDestroySpeed(targetBlock);
+                if (speed > bestSpeed) {
+                    bestSpeed = speed;
+                    bestSlot = i;
+                }
+            }
+        }
+
+        if (bestSlot >= 0 && bestSlot != inv.selected) {
+            inv.selected = bestSlot;
+            AIAgentMod.LOGGER.info("[{}] 切换工具到: {}", name, inv.getItem(bestSlot).getHoverName().getString());
+        }
+    }
+
+    /**
      * 在背包里找物品
      */
     private ItemStack findItemInInventory(String name) {
@@ -1202,16 +1454,17 @@ public class AIAutonomousCore {
 
     /**
      * 在附近搜索方块
+     * 同时匹配：显示名（中文）、注册名（英文）、标签名
      */
     private BlockPos findNearbyBlock(String target, int range) {
         ServerLevel level = player.serverLevel();
         BlockPos playerPos = player.blockPosition();
-        String lower = target.toLowerCase();
+        String lower = target.toLowerCase().replace(" ", "_");
 
         BlockPos closest = null;
         double closestDist = Double.MAX_VALUE;
 
-        // 球形搜索（比立方体更自然）
+        // 球形搜索
         for (int dx = -range; dx <= range; dx++) {
             for (int dy = -range / 2; dy <= range / 2; dy++) {
                 for (int dz = -range; dz <= range; dz++) {
@@ -1222,7 +1475,7 @@ public class AIAutonomousCore {
 
                     if (state.isAir()) continue;
 
-                    String blockName = state.getBlock().getName().getString().toLowerCase();
+                    // 注册名：minecraft:oak_log
                     String regName = "";
                     try {
                         regName = level.registryAccess()
@@ -1230,7 +1483,24 @@ public class AIAutonomousCore {
                             .getKey(state.getBlock()).toString().toLowerCase();
                     } catch (Exception ignored) {}
 
-                    if (blockName.contains(lower) || regName.contains(lower)) {
+                    // 路径名：oak_log（不含命名空间）
+                    String pathName = regName.contains(":") ? regName.split(":")[1] : regName;
+
+                    // 显示名：橡木原木
+                    String displayName = state.getBlock().getName().getString().toLowerCase();
+
+                    // 多种匹配方式
+                    boolean matched = false;
+                    if (regName.contains(lower) || pathName.contains(lower)) {
+                        matched = true;
+                    } else if (displayName.contains(lower)) {
+                        matched = true;
+                    } else {
+                        // 常见别名映射
+                        matched = matchBlockAlias(lower, pathName, regName);
+                    }
+
+                    if (matched) {
                         double dist = playerPos.distSqr(pos);
                         if (dist < closestDist) {
                             closestDist = dist;
@@ -1241,6 +1511,37 @@ public class AIAutonomousCore {
             }
         }
         return closest;
+    }
+
+    /**
+     * 方块别名匹配（LLM 可能用各种方式描述方块）
+     */
+    private boolean matchBlockAlias(String target, String pathName, String regName) {
+        // 木头类
+        if ((target.equals("log") || target.equals("原木") || target.equals("木头"))
+            && (pathName.contains("log") || pathName.contains("wood"))) return true;
+        if ((target.equals("plank") || target.equals("木板"))
+            && pathName.contains("planks")) return true;
+        // 矿石类
+        if ((target.equals("coal") || target.equals("煤"))
+            && pathName.contains("coal_ore")) return true;
+        if ((target.equals("iron") || target.equals("铁"))
+            && pathName.contains("iron_ore")) return true;
+        if ((target.equals("diamond") || target.equals("钻石"))
+            && pathName.contains("diamond_ore")) return true;
+        if ((target.equals("gold") || target.equals("金"))
+            && pathName.contains("gold_ore")) return true;
+        // 石头类
+        if ((target.equals("stone") || target.equals("石头"))
+            && pathName.equals("stone")) return true;
+        if ((target.equals("cobblestone") || target.equals("圆石"))
+            && pathName.equals("cobblestone")) return true;
+        // 泥土类
+        if ((target.equals("dirt") || target.equals("泥土"))
+            && pathName.equals("dirt")) return true;
+        if ((target.equals("grass") || target.equals("草方块"))
+            && pathName.contains("grass_block")) return true;
+        return false;
     }
 
     private boolean isAddressedToMe(String message) {
@@ -1308,6 +1609,10 @@ public class AIAutonomousCore {
     public void cleanup() {
         // 停止挖掘
         miningTarget = null;
+        // 停止攻击
+        attackTarget = null;
+        // 停止吃东西
+        if (player.isUsingItem()) player.stopUsingItem();
         // 清除异步状态
         pendingLLMResponse = null;
         waitingForLLM = false;
